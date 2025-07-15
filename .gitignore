@@ -1,0 +1,32 @@
+# Python環境
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ログ・履歴など
+*.log
+*.sqlite
+*.db
+*.json
+
+# 環境変数ファイル（本番用は除外）
+.env
+
+# IDE・エディタ関連
+.vscode/
+.idea/
+*.swp
+
+# 実行・ビルドファイル
+*.exe
+*.out
+*.bak
+
+# 仮想環境（名前に応じて調整してね）
+discord-env/
+venv/
+env/
+
+# システムファイル
+.DS_Store
+Thumbs.db

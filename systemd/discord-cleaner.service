@@ -1,0 +1,13 @@
+[Unit]
+Description=Discord Cleaner Bot
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/discord-cleaner-bot
+ExecStart=/home/pi/discord-env/bin/python /home/pi/discord-cleaner-bot/discord_cleaner.py
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target
