@@ -30,3 +30,5 @@ env/
 # システムファイル
 .DS_Store
 Thumbs.db
+
+.ssh/
