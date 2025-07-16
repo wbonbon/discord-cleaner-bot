@@ -9,6 +9,7 @@ status = {
     "deleted": "―",
     "skipped_too_old": "―",
     "skipped_pinned": "―",
+    "non_target": "―",
     "dry_run": "―",
     "last_event": "Bot未稼働",
 }
@@ -21,11 +22,12 @@ def parse_log_line(line: str):
         if ts:
             status["last_cleanup"] = ts.group()
     elif "処理サマリ" in line:
-        m = re.search(r"削除済: (\d+)件 / 古すぎ: (\d+)件 / ピン留め: (\d+)件", line)
+        m = re.search(r"削除済: (\d+)件 / 古すぎ: (\d+)件 / ピン留め: (\d+)件 / 対象外: (\d+)件", line)
         if m:
             status["deleted"] = m.group(1)
             status["skipped_too_old"] = m.group(2)
             status["skipped_pinned"] = m.group(3)
+            status["non_target"] = m.group(4)
             status["last_event"] = "削除完了"
     elif "Websocket closed" in line:
         status["last_event"] = "切断→再接続中"
@@ -56,6 +58,7 @@ def status_page():
         <li><strong>削除件数：</strong> {status["deleted"]}</li>
         <li><strong>古すぎスキップ：</strong> {status["skipped_too_old"]}</li>
         <li><strong>ピン留めスキップ：</strong> {status["skipped_pinned"]}</li>
+        <li><strong>対象外メッセージ：</strong> {status["non_target"]}</li>
         <li><strong>DRY_RUN モード：</strong> {status["dry_run"]}</li>
         <li><strong>Bot状態：</strong> {status["last_event"]}</li>
     </ul>
@@ -69,7 +72,7 @@ def history_page():
     conn = sqlite3.connect("discord-cleaner-history.db")
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT timestamp, deleted, skipped_too_old, skipped_pinned, dry_run
+        SELECT timestamp, deleted, skipped_too_old, skipped_pinned, non_target, dry_run
         FROM history ORDER BY id DESC LIMIT 20
     """)
     rows = cursor.fetchall()
@@ -85,12 +88,16 @@ def history_page():
     </style></head><body>
     <h2>📊 Discord Cleaner Bot 履歴</h2>
     <table>
-    <tr><th>実行時刻</th><th>削除</th><th>古すぎ</th><th>ピン留め</th><th>DRY_RUN</th></tr>
+    <tr><th>実行時刻</th><th>削除</th><th>古すぎ</th><th>ピン留め</th><th>対象外</th><th>DRY_RUN</th></tr>
     """
     for row in rows:
         html += "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>"
-    html += "</table><p><a href=\"/status\">⬅️ 状態に戻る</a></p></body></html>"
+    html += """
+    </table>
+    <p><a href="/status">⬅️ 状態に戻る</a></p>
+    </body></html>
+    """
     return render_template_string(html)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app

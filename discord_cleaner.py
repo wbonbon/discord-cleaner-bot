@@ -7,7 +7,7 @@ from discord.ext import tasks
 from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
 
-# --- ログ設定（journalctl用フォーマット） ---
+# --- ログ出力（journalctl向けフォーマット） ---
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -24,14 +24,14 @@ intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
-has_run = False  # 起動時処理フラグ
+has_run = False  # 起動時に1回だけ実行するためのフラグ
 
-# --- ステータス表示（DiscordのBotの「プレイ中」欄） ---
+# --- Botステータスを表示する関数（ゲーム名として） ---
 async def update_status(text):
     await client.change_presence(activity=discord.Game(name=text))
 
-# --- 履歴保存（SQLite） ---
-def save_history_to_db(timestamp, deleted, skipped_old, skipped_pinned, dry_run):
+# --- 履歴DBに書き込み ---
+def save_history_to_db(timestamp, deleted, skipped_old, skipped_pinned, non_target, dry_run):
     conn = sqlite3.connect("discord-cleaner-history.db")
     cursor = conn.cursor()
     cursor.execute("""
@@ -41,17 +41,18 @@ def save_history_to_db(timestamp, deleted, skipped_old, skipped_pinned, dry_run)
             deleted INTEGER,
             skipped_too_old INTEGER,
             skipped_pinned INTEGER,
+            non_target INTEGER,
             dry_run BOOLEAN
         )
     """)
     cursor.execute("""
-        INSERT INTO history (timestamp, deleted, skipped_too_old, skipped_pinned, dry_run)
-        VALUES (?, ?, ?, ?, ?)
-    """, (timestamp, deleted, skipped_old, skipped_pinned, dry_run))
+        INSERT INTO history (timestamp, deleted, skipped_too_old, skipped_pinned, non_target, dry_run)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (timestamp, deleted, skipped_old, skipped_pinned, non_target, dry_run))
     conn.commit()
     conn.close()
 
-# --- 削除処理 ---
+# --- メッセージ削除処理 ---
 async def cleanup_messages():
     try:
         channel = await client.fetch_channel(CHANNEL_ID)
@@ -65,8 +66,10 @@ async def cleanup_messages():
         deleted_count = 0
         skipped_old = 0
         skipped_pinned = 0
+        total_messages = 0
 
         async for msg in channel.history(limit=None, oldest_first=True):
+            total_messages += 1
             if msg.pinned:
                 skipped_pinned += 1
                 continue
@@ -83,15 +86,16 @@ async def cleanup_messages():
                 except Exception as e:
                     logging.error(f"削除失敗: {e}")
 
-        logging.info(f"処理サマリ → 削除済: {deleted_count}件 / 古すぎ: {skipped_old}件 / ピン留め: {skipped_pinned}件")
+        non_target = total_messages - (deleted_count + skipped_old + skipped_pinned)
+        logging.info(f"処理サマリ → 削除済: {deleted_count}件 / 古すぎ: {skipped_old}件 / ピン留め: {skipped_pinned}件 / 対象外: {non_target}件")
 
         timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
-        save_history_to_db(timestamp, deleted_count, skipped_old, skipped_pinned, DRY_RUN)
+        save_history_to_db(timestamp, deleted_count, skipped_old, skipped_pinned, non_target, DRY_RUN)
 
     except Exception as e:
         logging.critical(f"削除処理中に致命的エラー: {e}")
 
-# --- Bot起動時 ---
+# --- Bot起動イベント ---
 @client.event
 async def on_ready():
     global has_run
@@ -109,12 +113,12 @@ async def on_ready():
 
     scheduled_cleanup.start()
 
-# --- 定期処理（毎日3時） ---
+# --- 毎日3:00に削除処理ループ ---
 @tasks.loop(minutes=1)
 async def scheduled_cleanup():
     now = datetime.now()
     if now.hour == 3 and now.minute == 0:
-        logging.info(f"定期削除処理 3:00 開始（dry-run: {DRY_RUN}）")
+        logging.info(f"定期削除処理 3:00 実行（dry-run: {DRY_RUN}）")
         await update_status("掃除中 🧹")
         await cleanup_messages()
         await update_status("待機中 ⏳")
