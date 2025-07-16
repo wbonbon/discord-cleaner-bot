@@ -1,0 +1,13 @@
+[Unit]
+Description=Discord Cleaner Bot Status WebUI (via Gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=yosio
+WorkingDirectory=/home/yosio/discord-bot
+ExecStart=/home/yosio/discord-env/bin/gunicorn status_web:app --bind 0.0.0.0:5000 --workers 1
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

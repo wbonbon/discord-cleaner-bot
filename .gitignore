@@ -32,3 +32,8 @@ env/
 Thumbs.db
 
 .ssh/
+
+# SQLite DB（履歴など）
+*.db
+discord-cleaner-history.db
+
