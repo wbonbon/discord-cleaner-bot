@@ -5,19 +5,20 @@ import sqlite3
 import logging
 import re
 from discord.ext import tasks
+from discord import Embed
 from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 DELETE_DAYS = int(os.getenv("DELETE_DAYS", 7))
 DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -53,8 +54,6 @@ async def cleanup_messages():
     try:
         channel = await client.fetch_channel(CHANNEL_ID)
         threshold = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(days=DELETE_DAYS)
-        logging.info(f"削除対象条件: {DELETE_DAYS}日以上前 & 未ピン留め")
-
         deleted = skipped_old = skipped_pinned = total = 0
 
         async for msg in channel.history(limit=None, oldest_first=True):
@@ -75,78 +74,54 @@ async def cleanup_messages():
                     logging.error(f"削除失敗: {e}")
 
         non_target = total - (deleted + skipped_old + skipped_pinned)
-        logging.info(f"処理サマリ → 削除済: {deleted}件 / 古すぎ: {skipped_old}件 / ピン留め: {skipped_pinned}件 / 対象外: {non_target}件")
-
         timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
         save_history_to_db(timestamp, deleted, skipped_old, skipped_pinned, non_target, DRY_RUN)
 
     except Exception as e:
         logging.critical(f"削除処理中に致命的エラー: {e}")
 
-async def update_research_reset_pin():
-    channel = await client.fetch_channel(CHANNEL_ID)
-
-    # 既存ピンの日時を取得
-    existing_time = None
-    pinned_msg = None
-    pins = await channel.pins()
-    for pinned in pins:
-        if "次回の研究度リセットは" in pinned.content:
-            m = re.search(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", pinned.content)
-            if m:
-                try:
-                    existing_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
-                    pinned_msg = pinned
-                except ValueError:
-                    logging.warning("既存ピンの日時が不正")
-            break
-
-    # Reminder Bot のメッセージから次回予定を抽出
-    next_time = None
-    async for msg in channel.history(limit=50):
-        if "研究度リセットだよ" in msg.content and "occurs next at" in msg.content:
-            m = re.search(r"occurs next at (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", msg.content)
-            if m:
-                try:
-                    next_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
-                    break
-                except ValueError:
-                    logging.warning("Reminder Bot の日時が不正")
-
-    if next_time is None:
-        logging.info("研究度リセット予定が取得できなかったため、更新なし")
-        return
-
-    await update_research_reset_pin_manual(next_time)
-
 async def update_research_reset_pin_manual(next_time):
     channel = await client.fetch_channel(CHANNEL_ID)
 
+    # 既存ピンのEmbedから日時抽出
     existing_time = None
     pinned_msg = None
     pins = await channel.pins()
     for pinned in pins:
-        if "次回の研究度リセットは" in pinned.content:
-            m = re.search(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", pinned.content)
+        if pinned.embeds and pinned.embeds[0].title == "🧪 次回の研究度リセット予定":
+            desc = pinned.embeds[0].description or ""
+            m = re.search(r"<t:(\d+):F>", desc)
             if m:
                 try:
-                    existing_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+                    existing_time = datetime.fromtimestamp(int(m.group(1)))
                     pinned_msg = pinned
-                except ValueError:
-                    logging.warning("既存ピンの日時が不正")
+                except Exception:
+                    logging.warning("既存Embedピンの日時抽出に失敗")
             break
 
-    if existing_time is None or next_time > existing_time:
-        if pinned_msg:
-            await pinned_msg.unpin()
-            await pinned_msg.delete()
-            logging.info(f"古いピンを削除: {existing_time}")
-        text = f"次回の研究度リセットは {next_time.strftime('%Y-%m-%d %H:%M:%S')} だよ"
-        sent = await channel.send(text)
-        await sent.pin()
-        logging.info(f"新しい研究度リセット予定をピン留め: {next_time}")
-    else:
-        logging.info(f"既存ピンより新しくないため、更新なし（既存: {existing_time}, 新: {next_time})")
+    now = datetime.now()
+    if next_time < now:
+        await channel.send("⏰ その予定はすでに過ぎています。")
+        return
+
+    if existing_time and next_time <= existing_time:
+        await channel.send("📌 その予定はすでにピン留めされています。")
+        return
+
+    if pinned_msg:
+        await pinned_msg.unpin()
+        await pinned_msg.delete()
+        logging.info(f"古いピンを削除: {existing_time}")
+
+    unix_ts = int(next_time.timestamp())
+    embed = Embed(
+        title="🧪 次回の研究度リセット予定",
+        description=f"<t:{unix_ts}:F>（<t:{unix_ts}:R>）にリセットされます！\n<@&1384067593425522769> の皆さん、準備してね。",
+        color=0x6A5ACD
+    )
+    sent = await channel.send(embed=embed)
+    await sent.pin()
+    logging.info(f"新しい研究度リセット予定をピン留め: {next_time}")
 
 @client.event
 async def on_message(message):
@@ -158,52 +133,14 @@ async def on_message(message):
             if m:
                 try:
                     next_time = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
-                    now = datetime.now()
-
-                    if next_time < now:
-                        await message.channel.send("⏰ その予定はすでに過ぎています。")
-                        return
-
-                    # 既存ピンの日時を取得
-                    channel = await client.fetch_channel(CHANNEL_ID)
-                    existing_time = None
-                    pinned_msg = None
-                    pins = await channel.pins()
-                    for pinned in pins:
-                        if "次回の研究度リセットは" in pinned.content:
-                            m2 = re.search(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", pinned.content)
-                            if m2:
-                                try:
-                                    existing_time = datetime.strptime(m2.group(1), "%Y-%m-%d %H:%M:%S")
-                                    pinned_msg = pinned
-                                except ValueError:
-                                    logging.warning("既存ピンの日時が不正")
-                            break
-
-                    if existing_time and next_time <= existing_time:
-                        await message.channel.send("📌 その予定はすでにピン留めされています。")
-                        return
-
-                    # 更新処理
-                    if pinned_msg:
-                        await pinned_msg.unpin()
-                        await pinned_msg.delete()
-                        logging.info(f"古いピンを削除: {existing_time}")
-
-                    text = f"次回の研究度リセットは {next_time.strftime('%Y-%m-%d %H:%M:%S')} だよ"
-                    sent = await channel.send(text)
-                    await sent.pin()
-                    logging.info(f"新しい研究度リセット予定をピン留め: {next_time}")
+                    await update_research_reset_pin_manual(next_time)
                     await message.channel.send("✅ 研究度リセット予定を更新しました！")
-                    return
-
                 except ValueError:
                     await message.channel.send("⚠️ 日付の形式が不正です。`YYYY-MM-DD HH:MM:SS` で送ってください。")
-                    return
-
-        # 認識できないメッセージ
-        await message.channel.send("🤔 そのメッセージは認識できません。\n`研究度リセットだよ ... occurs next at YYYY-MM-DD HH:MM:SS` の形式で送ってください。")
-
+            else:
+                await message.channel.send("⚠️ 日付の抽出に失敗しました。")
+        else:
+            await message.channel.send("🤔 そのメッセージは認識できません。\n`研究度リセットだよ ... occurs next at YYYY-MM-DD HH:MM:SS` の形式で送ってください。")
 
 @client.event
 async def on_ready():
