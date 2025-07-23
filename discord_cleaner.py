@@ -54,28 +54,37 @@ async def cleanup_messages():
     try:
         channel = await client.fetch_channel(CHANNEL_ID)
         threshold = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(days=DELETE_DAYS)
+
         deleted = skipped_old = skipped_pinned = total = 0
 
         async for msg in channel.history(limit=None, oldest_first=True):
             total += 1
+
             if msg.pinned:
                 skipped_pinned += 1
                 continue
-            if msg.created_at < threshold:
-                skipped_old += 1
+
+            if msg.created_at > threshold:
+                # 新しすぎる投稿 → 処理対象外だが、履歴保存には含めない
                 continue
+
             if DRY_RUN:
-                logging.info(f"DRY-RUN: {msg.id} | {msg.created_at} | {msg.content}")
+                logging.info(f"削除候補: {msg.id} | {msg.created_at} | {msg.content[:50]}")
             else:
                 try:
                     await msg.delete()
                     deleted += 1
+                    logging.info(f"削除済: {msg.id} | {msg.created_at} | {msg.content[:50]}")
                 except Exception as e:
                     logging.error(f"削除失敗: {e}")
 
         non_target = total - (deleted + skipped_old + skipped_pinned)
         timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
         save_history_to_db(timestamp, deleted, skipped_old, skipped_pinned, non_target, DRY_RUN)
+
+        logging.info(
+            f"処理サマリ → 削除済: {deleted}件 / 古すぎ: {skipped_old}件 / ピン留め: {skipped_pinned}件 / 対象外: {non_target}件"
+        )
 
     except Exception as e:
         logging.critical(f"削除処理中に致命的エラー: {e}")
