@@ -56,12 +56,19 @@ async def cleanup_messages():
         channel = await client.fetch_channel(CHANNEL_ID)
         threshold = get_cleanup_threshold(DELETE_DAYS)
 
-        deleted = skipped_old = skipped_pinned = total = 0
+        deleted = skipped_old = skipped_pinned = non_target = total = 0
+
         async for msg in channel.history(limit=None, oldest_first=True):
             total += 1
+
             if msg.pinned:
                 skipped_pinned += 1
                 continue
+
+            if msg.created_at > threshold:
+                non_target += 1
+                continue
+
             if is_too_old_for_discord(msg.created_at):
                 skipped_old += 1
                 continue
@@ -76,7 +83,6 @@ async def cleanup_messages():
                 except Exception as e:
                     logging.error(f"削除失敗: {e}")
 
-        non_target = total - (deleted + skipped_old + skipped_pinned)
         timestamp = get_utc_timestamp()
         save_history_to_db(timestamp, deleted, skipped_old, skipped_pinned, non_target, DRY_RUN)
         log_cleanup_summary(deleted, skipped_old, skipped_pinned, non_target)

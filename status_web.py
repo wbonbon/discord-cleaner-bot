@@ -20,7 +20,7 @@ status = {
 def load_recent_logs():
     try:
         out = subprocess.check_output(
-            ["journalctl", "-u", "discord-cleaner.service", "-n", "100", "--no-pager"],
+            ["journalctl", "-u", "discord-cleaner.service", "-n", "300", "--no-pager"],
             text=True
         )
         for line in out.splitlines():
