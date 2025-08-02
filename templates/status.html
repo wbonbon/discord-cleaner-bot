@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Discord Cleaner Status</title>
+    <meta charset="utf-8">
+    <meta http-equiv="refresh" content="10">
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            margin: 2em;
+            color: #333;
+            background-color: #f4f7f9;
+        }
+        h2 {
+            color: #2c3e50;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 1.5em;
+        }
+        li {
+            padding: 0.5em 0;
+            border-bottom: 1px solid #eee;
+        }
+        li:last-child {
+            border-bottom: none;
+        }
+        strong {
+            color: #34495e;
+        }
+        a {
+            display: inline-block;
+            margin-top: 1em;
+            padding: 0.5em 1em;
+            background-color: #3498db;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        a:hover {
+            background-color: #2980b9;
+        }
+    </style>
+</head>
+<body>
+    <h2>🧹 Discord Cleaner Bot 状態</h2>
+    <ul>
+        <li><strong>最新処理時刻（JST）：</strong> {{ status["last_cleanup"] }}</li>
+        <li><strong>削除件数：</strong> {{ status["deleted"] }}</li>
+        <li><strong>古すぎスキップ：</strong> {{ status["skipped_too_old"] }}</li>
+        <li><strong>ピン留めスキップ：</strong> {{ status["skipped_pinned"] }}</li>
+        <li><strong>対象外：</strong> {{ status["non_target"] }}</li>
+        <li><strong>DRY_RUN モード：</strong> {{ status["dry_run"] }}</li>
+        <li><strong>Bot 状態：</strong> {{ status["last_event"] }}</li>
+    </ul>
+    <p><a href="/history">📈 履歴を見る</a></p>
+</body>
+</html>

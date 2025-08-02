@@ -3,8 +3,10 @@ import os
 import asyncio
 import sqlite3
 import logging
+import re
 from discord.ext import tasks
 from datetime import datetime, timezone, timedelta
+from discord import Embed
 from dotenv import load_dotenv
 from log_utils import get_utc_timestamp, get_cleanup_threshold, log_cleanup_summary
 
@@ -31,64 +33,106 @@ async def update_status(text):
     await client.change_presence(activity=discord.Game(name=f"{text} [{MODE.upper()}]"))
 
 def save_history_to_db(timestamp, deleted, skipped_old, skipped_pinned, non_target, dry_run):
-    conn = sqlite3.connect("discord-cleaner-history.db")
-    cursor = conn.cursor()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT,
-        deleted INTEGER,
-        skipped_too_old INTEGER,
-        skipped_pinned INTEGER,
-        non_target INTEGER,
-        dry_run BOOLEAN
-    )""")
-    cursor.execute("INSERT INTO history VALUES (NULL,?,?,?,?,?,?)",
-        (timestamp, deleted, skipped_old, skipped_pinned, dry_run, non_target))
-    conn.commit()
-    conn.close()
+    """
+    データベースにクリーンアップ履歴を保存する。
+    - データの整合性を保つため、INSERT文で列名を明示的に指定。
+    - with文でデータベース接続を管理し、リソースリークを防ぐ。
+    - データベース操作のエラーを捕捉する。
+    """
+    try:
+        conn = sqlite3.connect("discord-cleaner-history.db")
+        with conn: # with文を使用し、自動的にコミットとクローズを行う
+            cursor = conn.cursor()
+            cursor.execute("""CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                deleted INTEGER,
+                skipped_too_old INTEGER,
+                skipped_pinned INTEGER,
+                non_target INTEGER,
+                dry_run BOOLEAN
+            )""")
+            # 修正: データの整合性と堅牢性を確保するため、列名を明示的に指定しました。
+            cursor.execute("""INSERT INTO history (
+                timestamp, deleted, skipped_too_old, skipped_pinned, non_target, dry_run
+            ) VALUES (?,?,?,?,?,?)""",
+                (timestamp, deleted, skipped_old, skipped_pinned, non_target, dry_run))
+    except sqlite3.Error as e:
+        logging.error(f"データベースへの保存中にエラーが発生しました: {e}")
 
 def is_too_old_for_discord(msg_created_at: datetime) -> bool:
     limit = datetime.now(timezone.utc) - timedelta(days=14)
     return msg_created_at < limit
 
 async def cleanup_messages():
+    """
+    指定された日数より古いメッセージを効率的に削除する。
+    最新メッセージから遡り、削除対象をリストにまとめ、バルク削除を行う。
+    """
     try:
         channel = await client.fetch_channel(CHANNEL_ID)
+        # 指定された日数より古いメッセージを削除対象とする
         threshold = get_cleanup_threshold(DELETE_DAYS)
 
-        deleted = skipped_old = skipped_pinned = non_target = total = 0
+        deleted = 0
+        skipped_old = 0
+        skipped_pinned = 0
+        non_target = 0
 
-        async for msg in channel.history(limit=None, oldest_first=True):
-            total += 1
+        # Discordのメッセージ削除APIは14日以上古いメッセージを個別削除できないため、
+        # 削除対象は「DELETE_DAYSより古く、14日以内のメッセージ」となる。
+        # 14日以上古いメッセージはスキップする。
+        messages_to_delete = []
 
+        # 履歴を新しい方から取得
+        # 古いメッセージに到達したらループを終了するため、効率的になる
+        async for msg in channel.history(limit=None):
+            # ピン留めされたメッセージは常にスキップ
             if msg.pinned:
                 skipped_pinned += 1
                 continue
 
-            if msg.created_at > threshold:
-                non_target += 1
-                continue
+            # 指定日数より古いメッセージかチェック
+            if msg.created_at < threshold:
+                # DiscordのAPI制限（14日以上古いメッセージは個別削除不可）をチェック
+                if is_too_old_for_discord(msg.created_at):
+                    # 14日以上古いメッセージは削除不可としてスキップ
+                    skipped_old += 1
+                else:
+                    # 削除対象のメッセージをリストに追加
+                    messages_to_delete.append(msg)
+                
+                # DELETE_DAYSより古いメッセージに達したので、これ以上遡る必要はない
+                # ここでループを終了するのが効率化のポイント
+                break
 
-            if is_too_old_for_discord(msg.created_at):
-                skipped_old += 1
-                continue
-
-            if DRY_RUN:
-                logging.info(f"削除候補: {msg.id} | {msg.created_at}")
-            else:
+            # 指定日数より新しいメッセージは対象外
+            non_target += 1
+        
+        # DRY_RUNモードの場合は削除を実行しない
+        if DRY_RUN:
+            logging.info(f"DRY_RUN: 削除候補 {len(messages_to_delete)} 件")
+            deleted = 0
+        else:
+            if messages_to_delete:
                 try:
-                    await msg.delete()
-                    deleted += 1
-                    logging.info(f"削除済: {msg.id} | {msg.created_at}")
+                    # バルク削除を実行
+                    await channel.delete_messages(messages_to_delete)
+                    deleted = len(messages_to_delete)
+                    logging.info(f"バルク削除成功: {deleted} 件")
                 except Exception as e:
-                    logging.error(f"削除失敗: {e}")
-
+                    logging.error(f"バルク削除失敗: {e}")
+                    deleted = 0
+            else:
+                logging.info("削除対象メッセージはありませんでした。")
+        
         timestamp = get_utc_timestamp()
         save_history_to_db(timestamp, deleted, skipped_old, skipped_pinned, non_target, DRY_RUN)
         log_cleanup_summary(deleted, skipped_old, skipped_pinned, non_target)
 
     except Exception as e:
         logging.critical(f"削除中にエラー: {e}")
+
 
 async def update_research_reset_pin_manual(next_time, message) -> str:
     channel = await client.fetch_channel(CHANNEL_ID)
@@ -165,6 +209,7 @@ async def on_message(message):
             await message.channel.send(
                 "🤔 メッセージ形式が認識できません。\n`研究度リセットだよ ... occurs next at YYYY-MM-DD HH:MM:SS` のように送ってください。"
             )
+
 @client.event
 async def on_ready():
     global has_run

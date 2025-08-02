@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>履歴</title>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 2em;
+            color: #333;
+            background-color: #f4f7f9;
+        }
+        h2 {
+            color: #2c3e50;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 0.8em;
+            border: 1px solid #eee;
+            text-align: center;
+        }
+        th {
+            background: #ecf0f1;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        a {
+            display: inline-block;
+            margin-top: 1em;
+            padding: 0.5em 1em;
+            background-color: #95a5a6;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        a:hover {
+            background-color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <h2>📊 Discord Cleaner Bot 履歴</h2>
+    <table>
+        <tr>
+            <th>実行時刻（JST）</th>
+            <th>削除</th>
+            <th>古すぎ</th>
+            <th>ピン留め</th>
+            <th>対象外</th>
+            <th>DRY_RUN</th>
+        </tr>
+        {% for row in rows %}
+        <tr>
+            <td>{{ to_jst(row[0]) }}</td>
+            <td>{{ row[1] }}</td>
+            <td>{{ row[2] }}</td>
+            <td>{{ row[3] }}</td>
+            <td>{{ row[4] }}</td>
+            <td>{{ row[5] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    <p><a href="/status">⬅️ 状態に戻る</a></p>
+</body>
+</html>
