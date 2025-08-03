@@ -47,7 +47,7 @@ pip install -r requirements.txt
 ```
 
 cp .env.example .env
-```.env`ファイルの内容：
+````.env`ファイルの内容：
 
 ```
 
