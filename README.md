@@ -45,15 +45,12 @@ pip install -r requirements.txt
 `.env.example`ファイルをコピーして`.env`を作成し、設定情報を記述してください。
 
 ```
-
 cp .env.example .env
 
 ```
-
 `.env`ファイルの内容：
 
 ```
-
 # Discord Developer Portalで取得したBotのトークン
 DISCORD_TOKEN=YOUR_BOT_TOKEN
 
