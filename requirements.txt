@@ -1,4 +1,11 @@
-discord.py
-python-dotenv
-Flask
-gunicorn
+# discord.pyと依存関係
+discord.py==2.3.2
+
+# .envファイルを読み込むため
+python-dotenv==1.0.1
+
+# Webサーバー用
+Flask==3.0.3
+
+# WSGIサーバー用 (本番環境)
+gunicorn==22.0.0
