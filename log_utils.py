@@ -39,10 +39,16 @@ def parse_line(line: str) -> Optional[dict]:
             "last_event": "削除処理開始",
             "dry_run": "True" if "dry-run: True" in line else "False"
         }
+    # 修正: 「処理サマリ」のログ行を検出して「削除処理完了」ステータスを返すロジックを追加
+    elif "処理サマリ" in line:
+        return {"last_event": "削除処理完了"}
     elif "Websocket closed" in line:
         return {"last_event": "切断→再接続中"}
-    # 修正: 'successfully RESUMED' に一致する行のみを再接続成功と判断
+    elif "connected to Gateway" in line:
+        # 修正: Botが新しく起動した際の接続を「ログイン成功」とする
+        return {"last_event": "ログイン成功"}
     elif "successfully RESUMED" in line:
+        # 修正: Botが再開した際の接続を「再接続成功」とする
         return {"last_event": "再接続成功"}
     return None
 
