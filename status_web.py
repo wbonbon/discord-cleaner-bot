@@ -29,7 +29,7 @@ def get_latest_cleanup_status():
         cursor.execute("""
             SELECT timestamp, deleted, skipped_too_old, skipped_pinned, non_target, dry_run
             FROM history
-            ORDER BY id DESC
+            ORDER BY timestamp DESC
             LIMIT 1
         """)
         row = cursor.fetchone()
@@ -61,9 +61,8 @@ def load_recent_logs():
             text=True
         )
         for line in reversed(out.splitlines()):
-            # 処理サマリのログ行はスキップ
-            if "処理サマリ" not in line:
-                parse_log_line(line, status)
+            # 処理サマリのログ行はデータベースから取得するため、この行は削除しました。
+            parse_log_line(line, status)
     except Exception as e:
         status["last_event"] = f"ログ取得失敗: {e}"
         logging.error(f"ログ取得失敗: {e}")

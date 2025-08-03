@@ -33,27 +33,16 @@ def to_jst(utc_str: str) -> str:
 
 def parse_line(line: str) -> Optional[dict]:
     """ログ行を解析して辞書を返す"""
-    if "処理サマリ" in line:
-        m = re.search(r"削除済: (\d+)件 / 古すぎ: (\d+)件 / ピン留め: (\d+)件 / 対象外: (\d+)件", line)
-        if m:
-            return {
-                "deleted": int(m.group(1)),
-                "skipped_too_old": int(m.group(2)),
-                "skipped_pinned": int(m.group(3)),
-                "non_target": int(m.group(4)),
-                "last_event": "削除完了"
-            }
-    elif "削除処理" in line:
-        ts = re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", line)
-        timestamp = ts.group() if ts else "―"
+    if "削除処理" in line:
+        # 修正: last_cleanupの時刻はデータベースから取得するため、ここでは更新しない
         return {
             "last_event": "削除処理開始",
-            "dry_run": "True" if "dry-run: True" in line else "False",
-            "last_cleanup": timestamp
+            "dry_run": "True" if "dry-run: True" in line else "False"
         }
     elif "Websocket closed" in line:
         return {"last_event": "切断→再接続中"}
-    elif "RESUMED" in line:
+    # 修正: 'successfully RESUMED' に一致する行のみを再接続成功と判断
+    elif "successfully RESUMED" in line:
         return {"last_event": "再接続成功"}
     return None
 
