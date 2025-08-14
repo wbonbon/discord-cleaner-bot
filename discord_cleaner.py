@@ -77,12 +77,10 @@ async def cleanup_messages():
         deleted = 0
         skipped_old = 0
         skipped_pinned = 0
-        non_target = 0
-
-        # Discordのメッセージ削除APIは14日以上古いメッセージを個別削除できないため、
-        # 削除対象は「DELETE_DAYSより古く、14日以内のメッセージ」となる。
-        # 14日以上古いメッセージはスキップする。
+        
+        # 削除候補と対象外メッセージのリストを準備
         messages_to_delete = []
+        non_target_messages = []
 
         # 履歴を新しい方から取得
         # 古いメッセージに到達したらループを終了するため、効率的になる
@@ -102,13 +100,13 @@ async def cleanup_messages():
                     # 削除対象のメッセージをリストに追加
                     messages_to_delete.append(msg)
                 
-                # DELETE_DAYSより古いメッセージに達したので、これ以上遡る必要はない
-                # ここでループを終了するのが効率化のポイント
-                break
-
-            # 指定日数より新しいメッセージは対象外
-            non_target += 1
+            else:
+                 # 指定日数より新しいメッセージは対象外
+                non_target_messages.append(msg)
         
+        # non_target の最終カウント
+        non_target = len(non_target_messages)
+
         # DRY_RUNモードの場合は削除を実行しない
         if DRY_RUN:
             logging.info(f"DRY_RUN: 削除候補 {len(messages_to_delete)} 件")
@@ -132,7 +130,6 @@ async def cleanup_messages():
 
     except Exception as e:
         logging.critical(f"削除中にエラー: {e}")
-
 
 async def update_research_reset_pin_manual(next_time, message) -> str:
     channel = await client.fetch_channel(CHANNEL_ID)
