@@ -4,6 +4,7 @@ import asyncio
 import sqlite3
 import logging
 import re
+import pytz
 from discord.ext import tasks
 from datetime import datetime, timezone, timedelta
 from discord import Embed
@@ -197,11 +198,19 @@ async def on_message(message):
         if match:
             date_str = match.group(3)
             try:
-                next_time = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                # 修正：入力された文字列を日本時間（JST）として解析
+                japan_tz = pytz.timezone('Asia/Tokyo')
+                next_time_jst = japan_tz.localize(datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S"))
+                # その後、UTCに変換
+                next_time = next_time_jst.astimezone(pytz.utc)
+
                 response = await update_research_reset_pin_manual(next_time, message)
                 await message.channel.send(response)
             except ValueError:
                 await message.channel.send("⚠️ 日付の形式が不正です。\n例：`2025-07-29 03:00:00` のように送ってください。")
+            except Exception as e:
+                logging.error(f"タイムゾーン変換エラー: {e}")
+                await message.channel.send("⚠️ 日時の処理中にエラーが発生しました。")
         else:
             await message.channel.send(
                 "🤔 メッセージ形式が認識できません。\n`研究度リセットだよ ... occurs next at YYYY-MM-DD HH:MM:SS` のように送ってください。"
